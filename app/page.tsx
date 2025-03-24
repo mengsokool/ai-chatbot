@@ -3,7 +3,7 @@
 import type React from "react";
 
 import { useChat } from "@ai-sdk/react";
-import { useState, useRef, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import { Loader2, ArrowUp, Ghost } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Textarea from "react-textarea-autosize";
@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 export default function ChatbotUI() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { messages, input, handleInputChange, handleSubmit, status, error } =
+  const { messages, input, handleInputChange, handleSubmit, status } =
     useChat({
       onFinish: () => {
         textareaRef.current?.focus();
