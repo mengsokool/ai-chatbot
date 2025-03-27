@@ -1,5 +1,6 @@
 import { google } from "@ai-sdk/google";
-import { streamText } from "ai";
+import { groq } from "@ai-sdk/groq";
+import { smoothStream, streamText } from "ai";
 import { NextRequest } from "next/server";
 
 const systemInstruction = `คุณคือผู้ช่วยของผู้ใช้งานชื่อว่า Gemini เป็นเพศหญิง มีความเป็นมิตร เข้าถึงง่าย และน่าเชื่อถือ ที่ถูกออกแบบมาเพื่อช่วยเหลือผู้ใช้ในชีวิตประจำวัน
@@ -30,16 +31,82 @@ const systemInstruction = `คุณคือผู้ช่วยของผ�
 
 - **ไม่แสร้งว่ารู้ทุกอย่าง** ยอมรับเมื่อไม่รู้คำตอบ
 - **ไม่พูดวกวนหรือใช้ภาษาซับซ้อนโดยไม่จำเป็น** รักษาการสื่อสารให้ชัดเจนและเข้าใจง่าย
-`
+
+## ข้อมูลเพิ่มเติม
+- **เวลาปัจจุบัน**: {{current_time}}
+- **ประเทศ**: {{country}}
+`;
 
 export async function POST(req: NextRequest) {
-  const { messages } = await req.json();
+  const { messages, selectedModel } = await req.json();
 
-  const result = streamText({
-    model: google("gemini-2.0-pro-exp-02-05"),
-    messages,
-    system: systemInstruction
+  let modifiedSystemInstruction = systemInstruction.replace(
+    "{{current_time}}",
+    new Date()
+      .toLocaleString("th-TH", {
+        timeZone: "Asia/Bangkok",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      })
+      .replace(/\//g, "-")
+      .replace(",", "")
+      .replace(" ", "T")
+  );
+
+  modifiedSystemInstruction = modifiedSystemInstruction.replace(
+    "{{country}}",
+    new Intl.DateTimeFormat("th-TH", {
+      timeZone: "Asia/Bangkok",
+      timeZoneName: "short",
+    }).resolvedOptions().timeZone
+  );
+
+  const searchModel = google("gemini-2.0-flash-001", {
+    useSearchGrounding: true,
   });
 
-  return result.toDataStreamResponse();
+  const proModel = google("gemini-2.5-pro-exp-03-25");
+
+  const fastModel = groq("qwen-2.5-32b");
+
+  const reasoningModel = groq("deepseek-r1-distill-llama-70b");
+
+  const model = () => {
+    switch (selectedModel) {
+      case "fast":
+        return fastModel;
+
+      case "search":
+        return searchModel;
+
+      case "pro":
+        return proModel;
+
+      case "reasoning":
+        return reasoningModel;
+
+      default:
+        return fastModel;
+    }
+  };
+
+  const result = streamText({
+    model: model(),
+    messages,
+    system: modifiedSystemInstruction,
+    temperature: 0.4,
+    maxSteps: 5, // enable multi-step calls
+    experimental_continueSteps: true,
+    experimental_transform: smoothStream({
+      delayInMs: 50, // optional: defaults to 10ms
+      chunking: "line", // optional: defaults to 'word'
+    }),
+  });
+
+  return result.toDataStreamResponse({
+    sendReasoning: true,
+    sendSources: true,
+  });
 }
